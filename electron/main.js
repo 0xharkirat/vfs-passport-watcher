@@ -160,20 +160,38 @@ ipcMain.handle('save-config', (_e, next) => {
   log('config saved');
   return cfg;
 });
-ipcMain.handle('start', () => startWatching());
+ipcMain.handle('start', () => {
+  if (loginCtx) {
+    log('cannot start: login window still open — close it first');
+    return;
+  }
+  startWatching();
+});
 ipcMain.handle('stop', () => stopWatching());
 ipcMain.handle('check-now', () => runCycle());
 
 ipcMain.handle('open-login', async () => {
   if (loginCtx) return { ok: false, error: 'login window already open' };
+  if (running) return { ok: false, error: 'stop watching first before opening login' };
   if (!cfg) cfg = cfgMod.load(profileRoot(), appRoot());
-  log('opening login window — sign in manually, then close the browser');
+  log('opening login window — sign in manually; window auto-closes on dashboard');
   try {
-    loginCtx = await checker.openLoginFlow(profileRoot(), cfg.loginUrl, () => {
-      loginCtx = null;
-      log('login window closed — session saved');
-      pushStatus();
-    });
+    loginCtx = await checker.openLoginFlow(
+      profileRoot(),
+      cfg.loginUrl,
+      cfg.dashboardUrl,
+      {
+        onSuccess: () => {
+          log('login succeeded — session saved');
+          notify('VFS login saved', 'You can now click Start Watching.');
+        },
+        onClosed: () => {
+          loginCtx = null;
+          log('login window closed');
+          pushStatus();
+        },
+      }
+    );
     return { ok: true };
   } catch (err) {
     loginCtx = null;

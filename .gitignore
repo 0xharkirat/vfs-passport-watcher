@@ -8,3 +8,5 @@ out/
 browser-profile/
 screenshots/
 config.json
+# Playwright MCP scratch dumps
+.playwright-mcp/
