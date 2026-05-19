@@ -1,0 +1,24 @@
+{
+  "loginUrl": "https://passports.vfsglobal.com/aus/en/zap/login",
+  "checkIntervalMinutes": 5,
+  "jitterSeconds": 30,
+  "noSlotsTexts": [
+    "no appointment slots are available",
+    "No appointment slots available",
+    "no slots available"
+  ],
+  "targets": [
+    {
+      "name": "Adult Tourist Passport — Sydney",
+      "location": "Sydney",
+      "category": "Passport",
+      "subCategory": "Tourist Passport"
+    },
+    {
+      "name": "Child Passport — Sydney",
+      "location": "Sydney",
+      "category": "Passport",
+      "subCategory": "Child Passport"
+    }
+  ]
+}

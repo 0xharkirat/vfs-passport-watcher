@@ -1,0 +1,10 @@
+node_modules/
+dist/
+out/
+.DS_Store
+*.log
+# Electron userData (browser profile, screenshots, user config) live outside the repo,
+# but ignore any local stray copies too.
+browser-profile/
+screenshots/
+config.json

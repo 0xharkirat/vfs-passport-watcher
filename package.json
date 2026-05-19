@@ -1,0 +1,18 @@
+{
+  "name": "vfs-passport-watcher",
+  "version": "0.1.0",
+  "description": "Watch VFS Global (passports.vfsglobal.com) for South African passport appointment slots from Australia. Electron + Playwright.",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "postinstall": "playwright install chromium"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.0.0"
+  },
+  "dependencies": {
+    "playwright": "^1.48.0"
+  }
+}

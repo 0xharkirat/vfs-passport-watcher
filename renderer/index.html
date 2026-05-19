@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <title>VFS Passport Watcher</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>VFS Passport Watcher</h1>
+    <div id="badge" class="badge stopped">stopped</div>
+  </header>
+
+  <section class="row">
+    <button id="loginBtn">1. Login to VFS</button>
+    <button id="startBtn" class="primary">2. Start Watching</button>
+    <button id="stopBtn" disabled>Stop</button>
+    <button id="checkBtn">Check Now</button>
+  </section>
+
+  <section class="row small">
+    <label>Interval (min):
+      <input id="interval" type="number" min="1" max="120" value="5" />
+    </label>
+    <button id="saveCfgBtn" class="link">Save</button>
+    <button id="openFolderBtn" class="link">Open data folder</button>
+    <button id="openShotBtn" class="link">Open last screenshot</button>
+  </section>
+
+  <section>
+    <h2>Targets</h2>
+    <ul id="targets"></ul>
+  </section>
+
+  <section>
+    <h2>Log</h2>
+    <pre id="log"></pre>
+  </section>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
