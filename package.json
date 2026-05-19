@@ -5,14 +5,50 @@
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
-    "postinstall": "playwright install chromium"
+    "postinstall": "node scripts/install-browsers.js",
+    "build:win": "electron-builder --win nsis --x64"
   },
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^33.0.0"
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
   },
   "dependencies": {
     "playwright": "^1.48.0"
+  },
+  "build": {
+    "appId": "com.hark.vfs-passport-watcher",
+    "productName": "VFS Passport Watcher",
+    "files": [
+      "electron/**/*",
+      "renderer/**/*",
+      "src/**/*",
+      "config.default.json",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "playwright-browsers",
+        "to": "playwright-browsers",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "artifactName": "VFS-Passport-Watcher-Setup-${version}.exe"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/playwright/**",
+      "node_modules/playwright-core/**"
+    ]
   }
 }

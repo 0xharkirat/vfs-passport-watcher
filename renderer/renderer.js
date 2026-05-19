@@ -2,6 +2,43 @@ const $ = (id) => document.getElementById(id);
 
 let cfg = null;
 let alarm = null;
+let nextCheckAt = null;
+let lastCheckAt = null;
+let isRunning = false;
+
+function fmtRemaining(ms) {
+  if (ms < 0) ms = 0;
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return `${m}:${String(rem).padStart(2, '0')}`;
+}
+
+function fmtClock(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return d.toLocaleTimeString();
+}
+
+function tickCountdown() {
+  const cd = $('countdown');
+  const lc = $('lastcheck');
+  if (!isRunning) {
+    cd.textContent = '';
+    cd.className = 'countdown';
+    lc.textContent = lastCheckAt ? `last: ${fmtClock(lastCheckAt)}` : '';
+    return;
+  }
+  if (nextCheckAt) {
+    cd.textContent = `next in ${fmtRemaining(nextCheckAt - Date.now())}`;
+    cd.className = 'countdown';
+  } else {
+    cd.textContent = 'checking…';
+    cd.className = 'countdown checking';
+  }
+  lc.textContent = lastCheckAt ? `last: ${fmtClock(lastCheckAt)}` : '';
+}
+setInterval(tickCountdown, 1000);
 
 async function init() {
   cfg = await window.api.getConfig();
@@ -27,10 +64,12 @@ function renderTargets(results) {
 }
 
 function setRunning(running) {
+  isRunning = running;
   $('badge').className = 'badge ' + (running ? 'running' : 'stopped');
   $('badge').textContent = running ? 'watching' : 'stopped';
   $('startBtn').disabled = running;
   $('stopBtn').disabled = !running;
+  tickCountdown();
 }
 
 function appendLog(line) {
@@ -75,6 +114,7 @@ $('loginBtn').onclick = async () => {
 $('startBtn').onclick = () => window.api.start();
 $('stopBtn').onclick = () => { window.api.stop(); stopAlarm(); };
 $('checkBtn').onclick = () => window.api.checkNow();
+$('simulateBtn').onclick = () => window.api.simulateSlot();
 $('saveCfgBtn').onclick = async () => {
   const v = parseInt($('interval').value, 10);
   if (!Number.isFinite(v) || v < 1) return;
@@ -89,6 +129,9 @@ window.api.onLog(appendLog);
 window.api.onStatus((s) => {
   setRunning(s.running);
   if (s.lastResults) renderTargets(s.lastResults);
+  nextCheckAt = s.nextCheckAt || null;
+  lastCheckAt = s.lastCheckAt || null;
+  tickCountdown();
 });
 window.api.onSlotFound((r) => {
   $('badge').className = 'badge alert';

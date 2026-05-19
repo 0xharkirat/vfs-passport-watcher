@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('api', {
   start: () => ipcRenderer.invoke('start'),
   stop: () => ipcRenderer.invoke('stop'),
   checkNow: () => ipcRenderer.invoke('check-now'),
+  simulateSlot: () => ipcRenderer.invoke('simulate-slot'),
   openLogin: () => ipcRenderer.invoke('open-login'),
   openFolder: () => ipcRenderer.invoke('open-folder'),
   openLastScreenshot: () => ipcRenderer.invoke('open-last-screenshot'),

@@ -2,7 +2,7 @@
   "loginUrl": "https://passports.vfsglobal.com/aus/en/zap/login",
   "dashboardUrl": "https://passports.vfsglobal.com/aus/en/zap/dashboard",
   "checkIntervalMinutes": 5,
-  "jitterSeconds": 30,
+  "jitterSeconds": 0,
   "targets": [
     {
       "name": "Adult Tourist Passport — Sydney",

@@ -20,6 +20,16 @@ h2 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; color: #555
 .badge.running { background: #d1f5d3; color: #1d6e2a; }
 .badge.stopped { background: #eee; color: #555; }
 .badge.alert   { background: #ffd6d6; color: #a4000a; }
+.countdown {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; color: #2b6cb0; background: #e6f0fa;
+  padding: 3px 8px; border-radius: 6px;
+}
+.countdown.checking { background: #fff7cc; color: #806300; }
+.countdown.idle { background: #eee; color: #888; }
+.lastcheck {
+  font-size: 11px; color: #888; margin-left: auto;
+}
 .row {
   display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
   margin-bottom: 10px;

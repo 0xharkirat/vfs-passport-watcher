@@ -3,8 +3,21 @@ const path = require('path');
 const fs = require('fs');
 
 const NAV_TIMEOUT = 60_000;
-const ACTION_TIMEOUT = 20_000;
-const SLOT_SETTLE_MS = 3000;
+const ACTION_TIMEOUT = 25_000;
+
+const VFS_ORIGIN = 'https://passports.vfsglobal.com';
+const SESSION_KEYS = [
+  'JWT',
+  'csk_str',
+  'loginStatus',
+  'logged_email',
+  'ip',
+  'last_Access_details',
+  'application_configuration',
+  'appSchema',
+  'fullAppSchema',
+];
+const SLOT_API_PATTERN = /CheckIsSlotAvailable/i;
 
 function userDir(profileRoot) {
   const dir = path.join(profileRoot, 'browser-profile');
@@ -18,23 +31,75 @@ function screenshotsDir(profileRoot) {
   return dir;
 }
 
+function sessionFile(profileRoot) {
+  return path.join(profileRoot, 'session.json');
+}
+
+function loadSession(profileRoot) {
+  const f = sessionFile(profileRoot);
+  if (!fs.existsSync(f)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(f, 'utf8'));
+  } catch (_) {
+    return null;
+  }
+}
+
+function saveSession(profileRoot, entries) {
+  fs.writeFileSync(sessionFile(profileRoot), JSON.stringify(entries, null, 2));
+}
+
 async function launchContext(profileRoot, { headless }) {
   return chromium.launchPersistentContext(userDir(profileRoot), {
     headless,
-    viewport: { width: 1280, height: 900 },
+    viewport: { width: 1280, height: 1000 },
     args: ['--disable-blink-features=AutomationControlled'],
   });
 }
 
+async function addSessionRestoreScript(ctx, entries) {
+  if (!entries || Object.keys(entries).length === 0) return;
+  const json = JSON.stringify(entries);
+  const origin = JSON.stringify(VFS_ORIGIN);
+  await ctx.addInitScript(`
+    (function () {
+      try {
+        if (location.origin !== ${origin}) return;
+        var entries = ${json};
+        for (var k in entries) {
+          try { sessionStorage.setItem(k, entries[k]); } catch (e) {}
+        }
+      } catch (e) {}
+    })();
+  `);
+}
+
+async function captureSessionStorage(page) {
+  return page.evaluate(
+    (keys) => {
+      const out = {};
+      for (const k of keys) {
+        const v = sessionStorage.getItem(k);
+        if (v !== null) out[k] = v;
+      }
+      return out;
+    },
+    SESSION_KEYS
+  );
+}
+
 async function dismissCookies(page) {
-  const acceptOnly = page.getByRole('button', { name: /accept only necessary/i }).first();
-  if ((await acceptOnly.count()) > 0 && (await acceptOnly.isVisible().catch(() => false))) {
-    await acceptOnly.click({ timeout: 5000 }).catch(() => {});
+  const btn = page.getByRole('button', { name: /accept only necessary/i }).first();
+  if ((await btn.count()) > 0 && (await btn.isVisible().catch(() => false))) {
+    await btn.click({ timeout: 5000 }).catch(() => {});
   }
 }
 
 async function openLoginFlow(profileRoot, loginUrl, dashboardUrl, { onSuccess, onClosed }) {
+  const session = loadSession(profileRoot);
   const ctx = await launchContext(profileRoot, { headless: false });
+  if (session) await addSessionRestoreScript(ctx, session);
+
   const page = ctx.pages()[0] || (await ctx.newPage());
   await page.goto(loginUrl, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT });
 
@@ -46,7 +111,12 @@ async function openLoginFlow(profileRoot, loginUrl, dashboardUrl, { onSuccess, o
       if (!p || p.isClosed()) return;
       if (/\/dashboard/i.test(p.url())) {
         clearInterval(poll);
+        try {
+          const entries = await captureSessionStorage(p);
+          saveSession(profileRoot, entries);
+        } catch (_) {}
         onSuccess && onSuccess();
+        await new Promise((r) => setTimeout(r, 1500));
         await ctx.close().catch(() => {});
       }
     } catch (_) {}
@@ -74,30 +144,23 @@ async function pickFromCombobox(page, comboIndex, optionText, log, label) {
   await opt.waitFor({ state: 'visible', timeout: ACTION_TIMEOUT });
   await opt.click({ timeout: ACTION_TIMEOUT });
   log && log(`  ${label}: ${optionText}`);
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(400);
 }
 
-async function detectSession(page, dashboardUrl, log) {
-  await page.goto(dashboardUrl, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT });
-  await dismissCookies(page);
-  await page.waitForLoadState('networkidle', { timeout: NAV_TIMEOUT }).catch(() => {});
-  const url = page.url();
-  if (/\/login/i.test(url)) return { ok: false, url };
-  const dashboardHeading = page.getByRole('heading', { name: /dashboard/i }).first();
-  if ((await dashboardHeading.count()) === 0) {
-    log && log(`  not on dashboard (url=${url})`);
-    return { ok: false, url };
+function groupTargets(targets) {
+  const map = new Map();
+  for (const t of targets) {
+    const key = `${t.location}||${t.category}`;
+    if (!map.has(key)) {
+      map.set(key, { location: t.location, category: t.category, subs: [] });
+    }
+    map.get(key).subs.push(t);
   }
-  return { ok: true, url };
+  return Array.from(map.values());
 }
 
-async function checkTarget(profileRoot, cfg, target, { headless = true, log = () => {} } = {}) {
-  const ctx = await launchContext(profileRoot, { headless });
-  const page = ctx.pages()[0] || (await ctx.newPage());
-  page.setDefaultTimeout(ACTION_TIMEOUT);
-  page.setDefaultNavigationTimeout(NAV_TIMEOUT);
-
-  const result = {
+function makeResult(target) {
+  return {
     target: target.name,
     timestamp: new Date().toISOString(),
     status: 'unknown',
@@ -105,90 +168,151 @@ async function checkTarget(profileRoot, cfg, target, { headless = true, log = ()
     screenshot: null,
     url: null,
   };
+}
+
+async function snap(page, profileRoot, prefix) {
+  const shot = path.join(screenshotsDir(profileRoot), `${prefix}-${Date.now()}.png`);
+  await page.screenshot({ path: shot, fullPage: true }).catch(() => {});
+  return shot;
+}
+
+// Walk one (location, category) group. For each sub-category, change the
+// sub-category dropdown, wait for the CheckIsSlotAvailable XHR, record result.
+async function checkGroup(profileRoot, cfg, group, { headless = false, log = () => {} } = {}) {
+  const session = loadSession(profileRoot);
+  const ctx = await launchContext(profileRoot, { headless });
+  if (session) await addSessionRestoreScript(ctx, session);
+
+  const page = ctx.pages()[0] || (await ctx.newPage());
+  page.setDefaultTimeout(ACTION_TIMEOUT);
+  page.setDefaultNavigationTimeout(NAV_TIMEOUT);
+
+  // Latest payload bucket — reset before each sub-category selection.
+  let latestPayload = null;
+  page.on('response', async (resp) => {
+    if (SLOT_API_PATTERN.test(resp.url())) {
+      try {
+        latestPayload = await resp.json();
+      } catch (_) {
+        latestPayload = { _parseError: true };
+      }
+    }
+  });
+
+  const results = group.subs.map(makeResult);
 
   try {
-    log(`[${target.name}] checking`);
+    log(`[group ${group.location} / ${group.category}] checking ${group.subs.length} sub(s)`);
 
-    const session = await detectSession(page, cfg.dashboardUrl, log);
-    if (!session.ok) {
-      result.status = 'needs_login';
-      result.detail = 'session expired or not logged in';
-      result.url = session.url;
-      const shot = path.join(screenshotsDir(profileRoot), `needs-login-${Date.now()}.png`);
-      await page.screenshot({ path: shot, fullPage: true }).catch(() => {});
-      result.screenshot = shot;
-      return result;
+    await page.goto(cfg.dashboardUrl, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT });
+    await dismissCookies(page);
+
+    const dashHead = page.getByRole('heading', { name: /^dashboard$/i }).first();
+    const loginHead = page.getByRole('heading', { name: /^sign in$/i }).first();
+    await Promise.race([
+      dashHead.waitFor({ state: 'visible', timeout: 30_000 }).catch(() => {}),
+      loginHead.waitFor({ state: 'visible', timeout: 30_000 }).catch(() => {}),
+    ]);
+
+    if (/\/login/i.test(page.url()) || !(await dashHead.isVisible().catch(() => false))) {
+      const shot = await snap(page, profileRoot, 'needs-login');
+      for (const r of results) {
+        r.status = 'needs_login';
+        r.detail = 'session expired or not logged in';
+        r.url = page.url();
+        r.screenshot = shot;
+      }
+      return results;
     }
 
-    const startBtn = page.getByRole('button', { name: /start new booking/i });
-    await startBtn.click({ timeout: ACTION_TIMEOUT });
+    await page.getByRole('button', { name: /start new booking/i }).click({ timeout: ACTION_TIMEOUT });
     await page.waitForURL(/application-detail/i, { timeout: NAV_TIMEOUT });
     await page.waitForLoadState('networkidle', { timeout: NAV_TIMEOUT }).catch(() => {});
 
-    await pickFromCombobox(page, 0, target.location, log, 'centre');
-    await pickFromCombobox(page, 1, target.category, log, 'category');
-    await pickFromCombobox(page, 2, target.subCategory, log, 'sub-category');
+    // Pick centre and category ONCE.
+    await pickFromCombobox(page, 0, group.location, log, 'centre');
+    await pickFromCombobox(page, 1, group.category, log, 'category');
 
-    await page.waitForTimeout(SLOT_SETTLE_MS);
+    // Iterate sub-categories on the SAME page.
+    for (let i = 0; i < group.subs.length; i++) {
+      const sub = group.subs[i];
+      const r = results[i];
+      log(`  [${sub.name}]`);
+      latestPayload = null;
 
-    const probe = await page.evaluate(() => {
-      const alert = document.querySelector('[role="alert"]');
-      const btn = Array.from(document.querySelectorAll('button')).find(
-        (b) => b.textContent.trim() === 'Continue'
-      );
-      return {
-        alertText: alert ? alert.textContent.trim() : null,
-        continueDisabled: btn ? btn.disabled : null,
-        continueAriaDisabled: btn ? btn.getAttribute('aria-disabled') : null,
-        continueFound: !!btn,
-        url: location.href,
-      };
-    });
+      try {
+        await pickFromCombobox(page, 2, sub.subCategory, log, 'sub-category');
 
-    result.url = probe.url;
-    const noSlotAlert =
-      probe.alertText && /no appointment slots/i.test(probe.alertText);
-    const continueOn =
-      probe.continueFound &&
-      probe.continueDisabled === false &&
-      probe.continueAriaDisabled !== 'true';
+        const deadline = Date.now() + 15_000;
+        while (!latestPayload && Date.now() < deadline) {
+          await page.waitForTimeout(250);
+        }
 
-    if (continueOn) {
-      result.status = 'SLOT_FOUND';
-      result.detail = 'Continue button enabled';
-      const shot = path.join(screenshotsDir(profileRoot), `slot-${Date.now()}.png`);
-      await page.screenshot({ path: shot, fullPage: true }).catch(() => {});
-      result.screenshot = shot;
-    } else if (noSlotAlert) {
-      result.status = 'no_slots';
-      result.detail = 'no slots alert present';
-    } else {
-      result.status = 'unknown';
-      result.detail = `alertText=${JSON.stringify(probe.alertText)} continueDisabled=${probe.continueDisabled}`;
-      const shot = path.join(screenshotsDir(profileRoot), `unknown-${Date.now()}.png`);
-      await page.screenshot({ path: shot, fullPage: true }).catch(() => {});
-      result.screenshot = shot;
+        r.url = page.url();
+
+        if (!latestPayload) {
+          r.status = 'unknown';
+          r.detail = 'CheckIsSlotAvailable response not seen within 15s';
+          r.screenshot = await snap(page, profileRoot, 'unknown');
+        } else {
+          const earliest = latestPayload.earliestDate;
+          const slotList = Array.isArray(latestPayload.earliestSlotLists)
+            ? latestPayload.earliestSlotLists
+            : [];
+          if (earliest != null || slotList.length > 0) {
+            r.status = 'SLOT_FOUND';
+            r.detail = `earliestDate=${earliest} slots=${slotList.length}`;
+            r.screenshot = await snap(page, profileRoot, 'slot');
+            r.payload = latestPayload;
+          } else {
+            r.status = 'no_slots';
+            r.detail =
+              (latestPayload.error && latestPayload.error.description) || 'no slots';
+          }
+        }
+      } catch (err) {
+        r.status = 'error';
+        r.detail = (err && err.message) || String(err);
+        r.screenshot = await snap(page, profileRoot, 'error');
+      }
     }
   } catch (err) {
-    result.status = 'error';
-    result.detail = (err && err.message) || String(err);
-    const shot = path.join(screenshotsDir(profileRoot), `error-${Date.now()}.png`);
-    await page.screenshot({ path: shot, fullPage: true }).catch(() => {});
-    result.screenshot = shot;
+    for (const r of results) {
+      if (r.status === 'unknown') {
+        r.status = 'error';
+        r.detail = (err && err.message) || String(err);
+      }
+    }
+    if (!page.isClosed()) await snap(page, profileRoot, 'error-group');
   } finally {
+    try {
+      if (!page.isClosed()) {
+        const entries = await captureSessionStorage(page);
+        if (entries && entries.JWT) saveSession(profileRoot, entries);
+      }
+    } catch (_) {}
     await ctx.close().catch(() => {});
   }
-  return result;
+  return results;
 }
 
 async function runOnce(profileRoot, cfg, opts) {
-  const out = [];
-  for (const target of cfg.targets) {
-    const r = await checkTarget(profileRoot, cfg, target, opts);
-    out.push(r);
-    if (r.status === 'needs_login') break;
+  const groups = groupTargets(cfg.targets);
+  const all = [];
+  for (const g of groups) {
+    const rs = await checkGroup(profileRoot, cfg, g, opts);
+    all.push(...rs);
+    if (rs.some((r) => r.status === 'needs_login')) break;
   }
-  return out;
+  return all;
 }
 
-module.exports = { runOnce, checkTarget, openLoginFlow, screenshotsDir, userDir };
+module.exports = {
+  runOnce,
+  checkGroup,
+  openLoginFlow,
+  screenshotsDir,
+  userDir,
+  loadSession,
+  saveSession,
+};

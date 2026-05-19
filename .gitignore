@@ -10,3 +10,5 @@ screenshots/
 config.json
 # Playwright MCP scratch dumps
 .playwright-mcp/
+# Playwright bundled browsers (downloaded by postinstall, ~200MB)
+playwright-browsers/

@@ -10,6 +10,8 @@
   <header>
     <h1>VFS Passport Watcher</h1>
     <div id="badge" class="badge stopped">stopped</div>
+    <div id="countdown" class="countdown" title="Time until next automatic check"></div>
+    <div id="lastcheck" class="lastcheck" title="Last check timestamp"></div>
   </header>
 
   <section class="row">
@@ -17,6 +19,7 @@
     <button id="startBtn" class="primary">2. Start Watching</button>
     <button id="stopBtn" disabled>Stop</button>
     <button id="checkBtn">Check Now</button>
+    <button id="simulateBtn" title="Test the alarm pipeline">Simulate Slot Found</button>
   </section>
 
   <section class="row small">

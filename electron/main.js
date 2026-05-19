@@ -2,6 +2,13 @@ const { app, BrowserWindow, Tray, Menu, Notification, ipcMain, shell, nativeImag
 const path = require('path');
 const fs = require('fs');
 
+// Point Playwright at our bundled Chromium before requiring checker.
+// In dev: ./playwright-browsers (downloaded by scripts/install-browsers.js).
+// In packaged app: <resourcesPath>/playwright-browsers (via electron-builder extraResources).
+process.env.PLAYWRIGHT_BROWSERS_PATH = app.isPackaged
+  ? path.join(process.resourcesPath, 'playwright-browsers')
+  : path.join(__dirname, '..', 'playwright-browsers');
+
 const cfgMod = require('../src/config');
 const checker = require('../src/checker');
 
@@ -12,6 +19,8 @@ let timer = null;
 let running = false;
 let cfg = null;
 let lastResults = [];
+let nextCheckAt = null;
+let lastCheckAt = null;
 const logBuf = [];
 const MAX_LOG = 500;
 
@@ -35,7 +44,8 @@ function pushStatus() {
     running,
     intervalMinutes: cfg && cfg.checkIntervalMinutes,
     lastResults,
-    nextCheckAt: timer && timer._idleStart != null ? Date.now() + Math.max(0, timer._idleTimeout) : null,
+    nextCheckAt,
+    lastCheckAt,
   });
 }
 
@@ -87,9 +97,12 @@ function createWindow() {
 
 async function runCycle() {
   if (!cfg) cfg = cfgMod.load(profileRoot(), appRoot());
+  lastCheckAt = Date.now();
+  nextCheckAt = null;
+  pushStatus();
   log(`cycle start (${cfg.targets.length} targets)`);
   try {
-    const results = await checker.runOnce(profileRoot(), cfg, { headless: true, log });
+    const results = await checker.runOnce(profileRoot(), cfg, { headless: false, log });
     lastResults = results;
     for (const r of results) {
       log(`  ${r.target}: ${r.status} — ${r.detail}`);
@@ -114,6 +127,7 @@ function scheduleNext() {
   const minutes = (cfg && cfg.checkIntervalMinutes) || 5;
   const jitterMs = ((cfg && cfg.jitterSeconds) || 0) * 1000 * Math.random();
   const delay = minutes * 60_000 + jitterMs;
+  nextCheckAt = Date.now() + delay;
   log(`next check in ~${Math.round(delay / 1000)}s`);
   if (timer) clearTimeout(timer);
   timer = setTimeout(runCycle, delay);
@@ -132,6 +146,7 @@ function stopWatching() {
   running = false;
   if (timer) clearTimeout(timer);
   timer = null;
+  nextCheckAt = null;
   log('watching stopped');
   pushStatus();
 }
@@ -169,6 +184,20 @@ ipcMain.handle('start', () => {
 });
 ipcMain.handle('stop', () => stopWatching());
 ipcMain.handle('check-now', () => runCycle());
+
+ipcMain.handle('simulate-slot', () => {
+  const fake = {
+    target: (cfg && cfg.targets && cfg.targets[0] && cfg.targets[0].name) || 'TEST',
+    timestamp: new Date().toISOString(),
+    status: 'SLOT_FOUND',
+    detail: 'SIMULATED — no real slot, alarm test',
+    screenshot: null,
+    url: 'simulated://test',
+  };
+  lastResults = [fake];
+  onSlotFound(fake);
+  pushStatus();
+});
 
 ipcMain.handle('open-login', async () => {
   if (loginCtx) return { ok: false, error: 'login window already open' };
