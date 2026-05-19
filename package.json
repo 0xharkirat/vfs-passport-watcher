@@ -6,6 +6,7 @@
   "scripts": {
     "start": "electron .",
     "postinstall": "node scripts/install-browsers.js",
+    "prebuild:win": "node scripts/install-browsers.js --win",
     "build:win": "electron-builder --win nsis --x64"
   },
   "author": "",
@@ -27,16 +28,25 @@
       "config.default.json",
       "package.json"
     ],
-    "extraResources": [
-      {
-        "from": "playwright-browsers",
-        "to": "playwright-browsers",
-        "filter": ["**/*"]
-      }
-    ],
+    "mac": {
+      "extraResources": [
+        {
+          "from": "playwright-browsers",
+          "to": "playwright-browsers",
+          "filter": ["**/*"]
+        }
+      ]
+    },
     "win": {
       "target": "nsis",
-      "artifactName": "VFS-Passport-Watcher-Setup-${version}.exe"
+      "artifactName": "VFS-Passport-Watcher-Setup-${version}.exe",
+      "extraResources": [
+        {
+          "from": "playwright-browsers-win",
+          "to": "playwright-browsers",
+          "filter": ["**/*"]
+        }
+      ]
     },
     "nsis": {
       "oneClick": true,
