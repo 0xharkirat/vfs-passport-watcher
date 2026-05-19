@@ -1,5 +1,8 @@
 # VFS Passport Watcher
 
+> Made with ❤️ for Marina.
+
+
 Watches [passports.vfsglobal.com (AUS → ZAP)](https://passports.vfsglobal.com/aus/en/zap/login) for South African passport appointment slots from Australia, polls every few minutes in the background, and raises a loud alarm + Windows toast notification the moment a slot becomes visible.
 
 Built for non-technical users: install once, click **Login → Start**, leave it running.
