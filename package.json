@@ -7,7 +7,8 @@
     "start": "electron .",
     "postinstall": "node scripts/install-browsers.js",
     "prebuild:win": "node scripts/install-browsers.js --win",
-    "build:win": "electron-builder --win nsis --x64"
+    "build:win": "electron-builder --win nsis --x64",
+    "build:mac": "electron-builder --mac dir"
   },
   "author": "",
   "license": "MIT",
