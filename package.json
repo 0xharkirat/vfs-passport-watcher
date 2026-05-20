@@ -1,6 +1,6 @@
 {
   "name": "vfs-passport-watcher",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Watch VFS Global (passports.vfsglobal.com) for South African passport appointment slots from Australia. Electron + Playwright.",
   "main": "electron/main.js",
   "scripts": {

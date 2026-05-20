@@ -95,10 +95,22 @@ async function dismissCookies(page) {
   }
 }
 
+// The Angular app shows a full-screen ngx-ui-loader overlay during async work.
+// It intercepts pointer events, so clicks fail until it's gone. Wait it out.
+async function waitForLoaderGone(page, timeout = 30_000) {
+  const overlay = page.locator('.ngx-overlay.loading-foreground');
+  await overlay
+    .first()
+    .waitFor({ state: 'hidden', timeout })
+    .catch(() => {});
+}
+
 async function openLoginFlow(profileRoot, loginUrl, dashboardUrl, { onSuccess, onClosed }) {
-  const session = loadSession(profileRoot);
+  // IMPORTANT: do NOT restore sessionStorage here. A stale JWT makes the SPA
+  // think it's authed, bounce to /dashboard, fail validation, bounce back to
+  // /login — and our init script re-injects on every load → refresh loop.
+  // Login must always start clean.
   const ctx = await launchContext(profileRoot, { headless: false });
-  if (session) await addSessionRestoreScript(ctx, session);
 
   const page = ctx.pages()[0] || (await ctx.newPage());
   await page.goto(loginUrl, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT });
@@ -135,6 +147,7 @@ function regexEscape(s) {
 }
 
 async function pickFromCombobox(page, comboIndex, optionText, log, label) {
+  await waitForLoaderGone(page);
   const combo = page.getByRole('combobox').nth(comboIndex);
   await combo.waitFor({ state: 'visible', timeout: ACTION_TIMEOUT });
   await combo.click({ timeout: ACTION_TIMEOUT });
@@ -225,9 +238,11 @@ async function checkGroup(profileRoot, cfg, group, { headless = false, log = () 
       return results;
     }
 
+    await waitForLoaderGone(page);
     await page.getByRole('button', { name: /start new booking/i }).click({ timeout: ACTION_TIMEOUT });
     await page.waitForURL(/application-detail/i, { timeout: NAV_TIMEOUT });
     await page.waitForLoadState('networkidle', { timeout: NAV_TIMEOUT }).catch(() => {});
+    await waitForLoaderGone(page);
 
     // Pick centre and category ONCE.
     await pickFromCombobox(page, 0, group.location, log, 'centre');

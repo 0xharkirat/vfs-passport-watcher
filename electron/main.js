@@ -96,6 +96,11 @@ function createWindow() {
 }
 
 async function runCycle() {
+  if (loginCtx) {
+    log('skip cycle: login window open (shared browser profile)');
+    if (running) scheduleNext();
+    return;
+  }
   if (!cfg) cfg = cfgMod.load(profileRoot(), appRoot());
   lastCheckAt = Date.now();
   nextCheckAt = null;
